@@ -396,17 +396,30 @@
 
 <div class="admission-form-page">
 
+    <div class="af-crest">
+    <img src="{{ asset('images/logo.png') }}"
+         alt="YesEdu School And College logo"
+         class="af-crest-logo"
+         onerror="console.error('Logo failed to load:', this.src)">
+</div>
+
     {{-- Institutional identity --}}
-    <section class="af-card af-institution">
+    {{-- <section class="af-card af-institution">
         <div class="af-top-line"></div>
 
-        @if (! empty($logoUrl))
-            <div class="af-crest">
-                <img src="{{ $logoUrl }}"
-                     alt="YesEdu School And College logo"
-                     class="af-crest-logo">
-            </div>
-        @endif
+        @if (!empty($logoUrl))
+    <div class="af-crest">
+        <img src="{{ $logoUrl }}"
+             alt="YesEdu School And College logo"
+             class="af-crest-logo">
+    </div>
+@else
+    <div class="af-crest">
+        <img src="{{ asset('images/logo.png') }}"
+             alt="YesEdu School And College logo"
+             class="af-crest-logo">
+    </div>
+@endif --}}
 
         <h1>YesEdu School And College</h1>
         <p lang="bn">ইয়েস এডু স্কুল অ্যান্ড কলেজ</p>

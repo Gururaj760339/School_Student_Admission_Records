@@ -317,6 +317,96 @@
         color: var(--as-primary-dark);
     }
 
+    /* Section row + copy link */
+    .admission-select .as-section-row {
+        display: flex;
+        align-items: stretch;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .admission-select .as-section-row .as-section-link {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .admission-select .as-copy-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        flex: 0 0 auto;
+        padding: 0 10px;
+        border: 1px solid #c7d2fe;
+        border-radius: 9px;
+        background: #eef2ff;
+        color: var(--as-primary-dark);
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1;
+        white-space: nowrap;
+        cursor: pointer;
+        transition:
+            background .18s ease,
+            border-color .18s ease,
+            color .18s ease;
+    }
+
+    .admission-select .as-copy-link:hover {
+        border-color: #a5b4fc;
+        background: #e0e7ff;
+    }
+
+    .admission-select .as-copy-link:focus-visible {
+        outline: 3px solid rgba(79, 70, 229, .2);
+        outline-offset: 2px;
+    }
+
+    .admission-select .as-copy-link svg {
+        width: 13px;
+        height: 13px;
+        flex-shrink: 0;
+    }
+
+    /* Copy feedback toast */
+    .admission-select .as-copy-toast {
+        position: fixed;
+        left: 50%;
+        bottom: 24px;
+        z-index: 60;
+        max-width: calc(100vw - 32px);
+        padding: 11px 18px;
+        border-radius: 10px;
+        background: #111827;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, .22);
+        opacity: 0;
+        visibility: hidden;
+        transform: translate(-50%, 12px);
+        transition:
+            opacity .2s ease,
+            transform .2s ease,
+            visibility .2s ease;
+        pointer-events: none;
+    }
+
+    .admission-select .as-copy-toast.is-visible {
+        opacity: 1;
+        visibility: visible;
+        transform: translate(-50%, 0);
+    }
+
+    .admission-select .as-copy-toast.as-copy-toast-success {
+        background: #047857;
+    }
+
+    .admission-select .as-copy-toast.as-copy-toast-error {
+        background: #b91c1c;
+    }
+
     /* Empty section state */
     .admission-select .as-no-sections {
         display: flex;
@@ -566,20 +656,36 @@
                                 <ul class="as-section-list">
                                     @foreach ($group['sections'] as $section)
                                         <li>
-                                            <a class="as-section-link"
-                                               href="{{ route('admission.create', ['class' => $section['option_slug']]) }}">
+                                            <div class="as-section-row">
+                                                <a class="as-section-link"
+                                                   href="{{ route('admission.create', ['class' => $section['option_slug']]) }}">
 
-                                                <span class="as-section-label">
-                                                    @if ($section['name'])
-                                                        Section {{ $section['name'] }}
-                                                    @else
-                                                        Start admission
-                                                    @endif
-                                                </span>
+                                                    <span class="as-section-label">
+                                                        @if ($section['name'])
+                                                            Section {{ $section['name'] }}
+                                                        @else
+                                                            Start admission
+                                                        @endif
+                                                    </span>
 
-                                                <span class="as-section-arrow"
-                                                      aria-hidden="true">→</span>
-                                            </a>
+                                                    <span class="as-section-arrow"
+                                                          aria-hidden="true">→</span>
+                                                </a>
+
+                                                <button type="button"
+                                                        class="as-copy-link"
+                                                        data-admission-url="{{ route('admission.create', ['class' => $section['option_slug']]) }}"
+                                                        aria-label="Copy admission link for {{ $group['name'] }}@if ($section['name']) Section {{ $section['name'] }}@endif">
+                                                    <svg viewBox="0 0 24 24" fill="none"
+                                                         stroke="currentColor" stroke-width="1.9"
+                                                         stroke-linecap="round" stroke-linejoin="round"
+                                                         aria-hidden="true">
+                                                        <rect x="9" y="9" width="11" height="11" rx="2"/>
+                                                        <path d="M5 15V5a2 2 0 0 1 2-2h10"/>
+                                                    </svg>
+                                                    <span>Copy Link</span>
+                                                </button>
+                                            </div>
                                         </li>
                                     @endforeach
                                 </ul>
@@ -592,5 +698,108 @@
 
         </div>
     </div>
+
+    {{-- Copy link feedback --}}
+    <div class="as-copy-toast" role="status" aria-live="polite" aria-atomic="true"></div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+    (function () {
+        'use strict';
+
+        var page = document.querySelector('.admission-select');
+
+        if (!page) {
+            return;
+        }
+
+        var toast = page.querySelector('.as-copy-toast');
+        var toastTimer = null;
+
+        function showToast(message, isError) {
+            if (!toast) {
+                return;
+            }
+
+            toast.textContent = message;
+            toast.classList.toggle('as-copy-toast-success', !isError);
+            toast.classList.toggle('as-copy-toast-error', !!isError);
+            toast.classList.add('is-visible');
+
+            window.clearTimeout(toastTimer);
+            toastTimer = window.setTimeout(function () {
+                toast.classList.remove('is-visible');
+            }, 2500);
+        }
+
+        function fallbackCopy(text) {
+            var helper = document.createElement('textarea');
+            helper.value = text;
+            helper.setAttribute('readonly', '');
+            helper.style.position = 'fixed';
+            helper.style.top = '-9999px';
+            helper.style.opacity = '0';
+            document.body.appendChild(helper);
+            helper.select();
+            helper.setSelectionRange(0, helper.value.length);
+
+            try {
+                var copied = document.execCommand('copy');
+                document.body.removeChild(helper);
+
+                if (!copied) {
+                    throw new Error('Copy command was rejected.');
+                }
+
+                return Promise.resolve();
+            } catch (error) {
+                if (helper.parentNode) {
+                    document.body.removeChild(helper);
+                }
+
+                return Promise.reject(error);
+            }
+        }
+
+        function copyText(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                return navigator.clipboard.writeText(text);
+            }
+
+            return fallbackCopy(text);
+        }
+
+        page.addEventListener('click', function (event) {
+            var target = event.target;
+
+            if (!target || typeof target.closest !== 'function') {
+                return;
+            }
+
+            var button = target.closest('.as-copy-link');
+
+            if (!button || !page.contains(button)) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            var url = button.getAttribute('data-admission-url');
+
+            if (!url) {
+                showToast('Unable to copy link.', true);
+                return;
+            }
+
+            copyText(url).then(function () {
+                showToast('Link copied successfully!', false);
+            }).catch(function () {
+                showToast('Unable to copy link. Please copy it manually.', true);
+            });
+        });
+    })();
+</script>
+@endpush
