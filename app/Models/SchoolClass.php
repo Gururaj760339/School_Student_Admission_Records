@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
@@ -20,7 +21,15 @@ class SchoolClass extends Model
     /**
      * @var list<string>
      */
-    protected $fillable = ['name', 'slug'];
+    protected $fillable = ['school_id', 'name', 'slug'];
+
+    /**
+     * @return BelongsTo<School, $this>
+     */
+    public function school(): BelongsTo
+    {
+        return $this->belongsTo(School::class);
+    }
 
     /**
      * @return HasMany<Section, $this>
@@ -28,6 +37,14 @@ class SchoolClass extends Model
     public function sections(): HasMany
     {
         return $this->hasMany(Section::class, 'school_class_id');
+    }
+
+    /**
+     * @return HasMany<Student, $this>
+     */
+    public function students(): HasMany
+    {
+        return $this->hasMany(Student::class, 'class_id');
     }
 
     /**
@@ -41,7 +58,7 @@ class SchoolClass extends Model
     /**
      * Build a URL-safe, globally unique slug for a class name.
      */
-    public static function generateSlug(string $name, ?int $ignoreId = null): string
+    public static function generateSlug(string $name, ?int $schoolId = null, ?int $ignoreId = null): string
     {
         $base = Str::slug($name);
 

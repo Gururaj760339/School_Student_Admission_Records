@@ -2,193 +2,140 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Exceptions\GoogleSheetsException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StudentRequest;
-use App\Services\GoogleSheetsService;
-use App\Support\AdmissionClasses;
+use App\Models\School;
+use App\Models\Section;
+use App\Models\Student;
 use App\Support\AdmissionFields;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Pagination\LengthAwarePaginator;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 /**
- * Authenticated admin management of student records.
+ * Authenticated management of student records for one school.
  *
- * Records are read directly from Google Sheets; there is no database cache.
- * Every view/edit/delete operation is scoped to the class worksheet and the
- * record is located by its immutable record_id.
+ * Every query is filtered by school_id, so one school's records can never be
+ * listed, viewed, edited or deleted through another school's URLs.
  */
 class StudentController extends Controller
 {
     private const PER_PAGE = 15;
 
-    public function __construct(private readonly GoogleSheetsService $sheets) {}
-
-    public function index(Request $request): View
+    public function index(Request $request, School $school): View
     {
-        $classSlug = $this->resolveClassFilter($request->query('class'));
+        $classId = $this->resolveClassFilter($request->query('class_id'), $school);
+        $sectionId = $this->resolveSectionFilter($request->query('section_id'), $school, $classId);
         $search = trim((string) $request->query('search', ''));
         $gender = $this->resolveGenderFilter($request->query('gender'));
 
-        $slugs = $classSlug !== null ? [$classSlug] : AdmissionClasses::slugs();
+        $students = Student::query()
+            ->where('school_id', $school->id)
+            ->with(['schoolClass', 'section'])
+            ->when($classId !== null, fn (Builder $query) => $query->where('class_id', $classId))
+            ->when($sectionId !== null, fn (Builder $query) => $query->where('section_id', $sectionId))
+            ->when($gender !== null, fn (Builder $query) => $query->where('gender', $gender))
+            ->when($search !== '', function (Builder $query) use ($search) {
+                foreach (preg_split('/\s+/', $search, -1, PREG_SPLIT_NO_EMPTY) as $term) {
+                    $needle = '%'.$term.'%';
 
-        $records = collect();
-        $serviceError = null;
-
-        try {
-            $records = collect($this->sheets->getRecordsForClasses($slugs));
-        } catch (GoogleSheetsException $e) {
-            $serviceError = $e->getMessage();
-        }
-
-        if ($search !== '') {
-            $records = $this->applySearch($records, $search);
-        }
-
-        if ($gender !== null) {
-            $records = $records->filter(fn ($record) => ($record['gender'] ?? null) === $gender)->values();
-        }
-
-        $page = max(1, (int) $request->query('page', 1));
-        $paginator = new LengthAwarePaginator(
-            $records->slice(($page - 1) * self::PER_PAGE, self::PER_PAGE)->values(),
-            $records->count(),
-            self::PER_PAGE,
-            $page,
-            [
-                'path' => route('admin.students.index'),
-                'query' => $request->query(),
-            ]
-        );
+                    $query->where(function (Builder $query) use ($needle) {
+                        $query->where('first_name', 'like', $needle)
+                            ->orWhere('last_name', 'like', $needle)
+                            ->orWhere('admission_number', 'like', $needle)
+                            ->orWhere('roll_no', 'like', $needle)
+                            ->orWhere('mobile', 'like', $needle);
+                    });
+                }
+            })
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate(self::PER_PAGE)
+            ->withQueryString();
 
         return view('admin.students.index', [
-            'students' => $paginator,
-            'classes' => AdmissionClasses::options(),
-            'classFilter' => $classSlug,
+            'school' => $school,
+            'students' => $students,
+            'classes' => $school->classes()
+                ->with(['sections' => fn ($query) => $query->orderBy('name')])
+                ->orderBy('name')
+                ->get(),
+            'classFilter' => $classId,
+            'sectionFilter' => $sectionId,
             'search' => $search,
             'gender' => $gender,
-            'serviceError' => $serviceError,
+            'serviceError' => null,
         ]);
     }
 
-    public function show(string $class, string $recordId): View
+    public function show(School $school, Student $student): View
     {
-        $this->assertClass($class);
+        $this->assertBelongsToSchool($school, $student);
 
-        try {
-            $record = $this->sheets->findRecord(AdmissionClasses::worksheetFor($class), $recordId);
-        } catch (GoogleSheetsException $e) {
-            return view('admin.students.error', [
-                'message' => $e->getMessage(),
-            ]);
-        }
-
-        if ($record === null) {
-            abort(404, 'Student record not found.');
-        }
+        $student->load(['schoolClass', 'section']);
 
         return view('admin.students.show', [
-            'record' => $record,
-            'classSlug' => $class,
-            'className' => AdmissionClasses::nameFor($class),
+            'school' => $school,
+            'student' => $student,
+            'record' => $this->record($student),
+            'className' => $student->schoolClass?->name,
+            'sectionName' => $student->section?->name,
             'fields' => AdmissionFields::all(),
         ]);
     }
 
-    public function edit(string $class, string $recordId): View
+    public function edit(School $school, Student $student): View
     {
-        $this->assertClass($class);
+        $this->assertBelongsToSchool($school, $student);
 
-        try {
-            $record = $this->sheets->findRecord(AdmissionClasses::worksheetFor($class), $recordId);
-        } catch (GoogleSheetsException $e) {
-            return view('admin.students.error', [
-                'message' => $e->getMessage(),
-            ]);
-        }
-
-        if ($record === null) {
-            abort(404, 'Student record not found.');
-        }
+        $student->load(['schoolClass', 'section']);
 
         return view('admin.students.edit', [
-            'record' => $record,
-            'classSlug' => $class,
-            'className' => AdmissionClasses::nameFor($class),
+            'school' => $school,
+            'student' => $student,
+            'record' => $this->record($student),
+            'className' => $student->schoolClass?->name,
+            'sectionName' => $student->section?->name,
             'fields' => AdmissionFields::all(),
             'required' => AdmissionFields::required(),
         ]);
     }
 
-    public function update(StudentRequest $request, string $class, string $recordId): RedirectResponse
+    public function update(StudentRequest $request, School $school, Student $student): RedirectResponse
     {
-        $this->assertClass($class);
+        $this->assertBelongsToSchool($school, $student);
 
-        try {
-            $this->sheets->updateRecord(
-                AdmissionClasses::worksheetFor($class),
-                $recordId,
-                $request->validated()
-            );
-        } catch (GoogleSheetsException $e) {
-            return redirect()->back()->withInput()->with('error', $e->getMessage());
-        }
+        $student->update($request->validated());
 
         return redirect()
-            ->route('admin.students.index', ['class' => $class])
+            ->route('admin.students.index', $school)
             ->with('success', 'Student record updated successfully.');
     }
 
-    public function destroy(string $class, string $recordId): RedirectResponse
+    public function destroy(School $school, Student $student): RedirectResponse
     {
-        $this->assertClass($class);
+        $this->assertBelongsToSchool($school, $student);
 
-        try {
-            $this->sheets->deleteRecord(AdmissionClasses::worksheetFor($class), $recordId);
-        } catch (GoogleSheetsException $e) {
-            return redirect()
-                ->route('admin.students.index', ['class' => $class])
-                ->with('error', $e->getMessage());
-        }
+        $student->delete();
 
         return redirect()
-            ->route('admin.students.index', ['class' => $class])
+            ->route('admin.students.index', $school)
             ->with('success', 'Student record deleted successfully.');
     }
 
     /**
-     * @param  Collection<int, array<string, string|null>>  $records
-     * @return Collection<int, array<string, string|null>>
+     * @return array<string, mixed>
      */
-    private function applySearch(Collection $records, string $search): Collection
+    private function record(Student $student): array
     {
-        $needle = Str::lower($search);
+        $record = $student->only(AdmissionFields::names());
+        $record[AdmissionFields::RECORD_ID] = $student->id;
 
-        return $records->filter(function ($record) use ($needle) {
-            $candidates = [
-                $record['admission_number'] ?? '',
-                $record['first_name'] ?? '',
-                $record['last_name'] ?? '',
-                trim(($record['first_name'] ?? '').' '.($record['last_name'] ?? '')),
-                $record['mobile'] ?? '',
-                $record['roll_no'] ?? '',
-            ];
-
-            foreach ($candidates as $candidate) {
-                if ($candidate !== '' && Str::contains(Str::lower((string) $candidate), $needle)) {
-                    return true;
-                }
-            }
-
-            return false;
-        })->values();
+        return $record;
     }
 
-    private function resolveClassFilter(mixed $value): ?string
+    private function resolveClassFilter(mixed $value, School $school): ?int
     {
         $value = is_string($value) ? trim($value) : '';
 
@@ -196,7 +143,28 @@ class StudentController extends Controller
             return null;
         }
 
-        return AdmissionClasses::exists($value) ? $value : null;
+        $id = (int) $value;
+
+        return $school->classes()->whereKey($id)->exists() ? $id : null;
+    }
+
+    private function resolveSectionFilter(mixed $value, School $school, ?int $classId): ?int
+    {
+        $value = is_string($value) ? trim($value) : '';
+
+        if ($value === '' || $value === 'all') {
+            return null;
+        }
+
+        $id = (int) $value;
+
+        $exists = Section::query()
+            ->whereKey($id)
+            ->when($classId !== null, fn ($query) => $query->where('school_class_id', $classId))
+            ->whereHas('schoolClass', fn ($query) => $query->where('school_id', $school->id))
+            ->exists();
+
+        return $exists ? $id : null;
     }
 
     private function resolveGenderFilter(mixed $value): ?string
@@ -206,10 +174,8 @@ class StudentController extends Controller
         return in_array($value, ['Male', 'Female', 'Other'], true) ? $value : null;
     }
 
-    private function assertClass(string $class): void
+    private function assertBelongsToSchool(School $school, Student $student): void
     {
-        if (! AdmissionClasses::exists($class)) {
-            abort(404, 'Unknown class.');
-        }
+        abort_unless((int) $student->school_id === (int) $school->id, 404);
     }
 }

@@ -370,7 +370,7 @@
 <body>
     <header class="site-header">
         <div class="container header-inner">
-            <a class="brand" href="{{ route('admission.select') }}">
+            <a class="brand" href="{{ auth()->check() ? route('admin.schools.index') : url('/') }}">
                 <span class="brand-text">School Student Admission Records</span>
             </a>
 
@@ -398,10 +398,14 @@
 
             <nav class="site-nav" id="siteNavigation">
                 @auth
-                    <a href="{{ route('admission.select') }}">New Admission</a>
-                    <a href="{{ route('admin.students.index') }}">Manage Students</a>
-                    <a href="{{ route('admin.classes.index') }}">Classes &amp; Sections</a>
-                    <a href="{{ route('branding.logo.edit') }}">Upload Logo</a>
+                    <a href="{{ route('admin.schools.index') }}">School Management</a>
+
+                    @isset($school)
+                        <a href="{{ route('admission.create', ['token' => $school->admission_token]) }}">New Admission</a>
+                        <a href="{{ route('admin.students.index', $school) }}">Manage Students</a>
+                        <a href="{{ route('admin.classes.index', $school) }}">Classes &amp; Sections</a>
+                        <a href="{{ route('admin.logo.edit', $school) }}">Upload Logo</a>
+                    @endisset
 
                     <form method="POST" action="{{ route('logout') }}" class="inline">
                         @csrf
@@ -422,7 +426,7 @@
     <footer class="site-footer">
         <div class="container">
             <p class="muted">
-                Student records are stored in Google Sheets. No student data is kept in the database.
+                Student records are stored securely in the database.
             </p>
         </div>
     </footer>

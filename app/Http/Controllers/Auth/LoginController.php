@@ -31,7 +31,7 @@ class LoginController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('admin.students.index'));
+        return redirect()->intended(route('admin.schools.index'));
     }
 
     public function logout(Request $request): RedirectResponse

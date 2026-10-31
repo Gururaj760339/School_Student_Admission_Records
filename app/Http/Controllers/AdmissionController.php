@@ -2,94 +2,94 @@
 
 namespace App\Http\Controllers;
 
-use App\Exceptions\GoogleSheetsException;
+use App\Http\Requests\AdmissionRequest;
 use App\Http\Requests\StudentRequest;
-use App\Services\GoogleSheetsService;
-use App\Support\AdmissionClasses;
+use App\Models\School;
+use App\Models\Section;
+use App\Models\Student;
 use App\Support\AdmissionFields;
-use App\Support\SchoolBranding;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 /**
- * Public admission workflow: select a class, complete the form, preview,
- * and only then confirm & submit to Google Sheets.
+ * Public admission workflow for one school.
+ *
+ * The school is always resolved from the token in the URL. Browser input is
+ * never trusted for the school id, so a visitor cannot submit a record into a
+ * different school by changing a hidden field.
  */
 class AdmissionController extends Controller
 {
-    public function __construct(private readonly GoogleSheetsService $sheets) {}
-
-    public function select(): View
+    public function create(Request $request, string $token): View
     {
-        return view('admission.select', [
-            'classes' => AdmissionClasses::grouped(),
-            'default' => AdmissionClasses::defaultSlug(),
-        ]);
-    }
+        $school = $this->school($token);
 
-    public function create(string $class): View
-    {
-        $this->assertClass($class);
+        $record = $this->blankRecord();
 
-        $record = AdmissionFields::blank();
-
-        if ($pending = $this->pendingForClass($class)) {
+        if ($pending = $this->pendingForSchool($school)) {
             $record = array_merge($record, $pending['data']);
         }
 
-        return view('admission.form', $this->formData($class, $record));
+        return view('admission.form', $this->formData($school, $record));
     }
 
-    public function preview(StudentRequest $request, string $class): View
+    public function preview(AdmissionRequest $request, string $token): View
     {
-        $this->assertClass($class);
+        $school = $this->school($token);
 
-        $data = AdmissionFields::normalize($request->validated());
-        $token = (string) Str::uuid();
+        $data = $this->normalize($request);
+        $previewToken = (string) Str::uuid();
 
-        $request->session()->put("admission.pending.$token", [
-            'class' => $class,
+        $request->session()->put("admission.pending.$previewToken", [
+            'school_id' => $school->id,
             'data' => $data,
             'created_at' => now()->timestamp,
         ]);
-        $request->session()->put("admission.pending_class.$class", $token);
+        $request->session()->put("admission.pending.school.{$school->id}", $previewToken);
 
         return view('admission.preview', [
-            'classSlug' => $class,
-            'className' => AdmissionClasses::nameFor($class),
+            'school' => $school,
+            'className' => $this->className($school, $data['class_id'] ?? null),
+            'sectionName' => $this->sectionName($school, $data['class_id'] ?? null, $data['section_id'] ?? null),
             'fields' => AdmissionFields::all(),
             'record' => $data,
-            'token' => $token,
+            'token' => $previewToken,
             'error' => null,
         ]);
     }
 
-    public function edit(Request $request, string $class): View|RedirectResponse
+    public function edit(Request $request, string $token): View|RedirectResponse
     {
-        $this->assertClass($class);
-
-        $pending = $this->pendingForClass($class);
+        $school = $this->school($token);
+        $pending = $this->pendingForSchool($school);
 
         if ($pending === null) {
-            return redirect()->route('admission.create', ['class' => $class]);
+            return redirect()
+                ->route('admission.create', ['token' => $school->admission_token])
+                ->with('error', 'There is no preview to edit. Please complete the form first.');
         }
 
-        return view('admission.form', $this->formData($class, $pending['data'], 'Review and edit your details, then preview again.'));
+        return view('admission.form', $this->formData(
+            $school,
+            array_merge($this->blankRecord(), $pending['data']),
+            'Review and edit your details, then preview again.'
+        ));
     }
 
-    public function submit(Request $request, string $class): View|RedirectResponse
+    public function submit(Request $request, string $token): View|RedirectResponse
     {
-        $this->assertClass($class);
+        $school = $this->school($token);
+        $previewToken = (string) $request->input('submission_token', '');
+        $pending = $previewToken !== ''
+            ? $request->session()->get("admission.pending.$previewToken")
+            : null;
 
-        $token = (string) $request->input('submission_token', '');
-        $pending = $token !== '' ? $request->session()->get("admission.pending.$token") : null;
-
-        if (! is_array($pending) || ($pending['class'] ?? null) !== $class) {
-            return redirect()->route('admission.create', ['class' => $class])
+        if (! is_array($pending) || (int) ($pending['school_id'] ?? 0) !== $school->id) {
+            return redirect()
+                ->route('admission.create', ['token' => $school->admission_token])
                 ->with('error', 'This submission has already been processed or has expired. The form was reset to prevent duplicate records.');
         }
 
@@ -101,96 +101,172 @@ class AdmissionController extends Controller
         );
 
         if ($validator->fails()) {
-            return redirect()->route('admission.create', ['class' => $class])
+            return redirect()
+                ->route('admission.create', ['token' => $school->admission_token])
                 ->withErrors($validator)
                 ->withInput($pending['data'])
                 ->with('error', 'Please correct the highlighted fields and preview again.');
         }
 
-        // Guard against concurrent double submissions (double-click / retry).
-        $lockKey = "admission.submitting.$token";
+        $data = AdmissionFields::normalize($validator->validated());
+        $classId = $pending['data']['class_id'] ?? null;
+        $sectionId = $pending['data']['section_id'] ?? null;
 
-        if (! Cache::add($lockKey, true, 300)) {
-            return view('admission.preview', [
-                'classSlug' => $class,
-                'className' => AdmissionClasses::nameFor($class),
-                'fields' => AdmissionFields::all(),
-                'record' => $pending['data'],
-                'token' => $token,
-                'error' => 'This submission is already being processed. Please wait a moment before trying again.',
-            ]);
+        $class = $classId !== null
+            ? $school->classes()->find($classId)
+            : null;
+
+        if ($classId !== null && $class === null) {
+            return $this->invalidSelection($school, 'The selected class is no longer available for this school.');
         }
 
-        try {
-            $record = $this->sheets->appendRecord(
-                AdmissionClasses::worksheetFor($class),
-                $validator->validated()
-            );
-        } catch (GoogleSheetsException $e) {
-            // Keep the pending payload so the user can retry; release the lock.
-            Cache::forget($lockKey);
+        $section = $sectionId !== null
+            ? Section::query()
+                ->where('school_class_id', $class?->id)
+                ->find($sectionId)
+            : null;
 
-            return view('admission.preview', [
-                'classSlug' => $class,
-                'className' => AdmissionClasses::nameFor($class),
-                'fields' => AdmissionFields::all(),
-                'record' => $pending['data'],
-                'token' => $token,
-                'error' => $e->getMessage(),
-            ]);
+        if ($sectionId !== null && $section === null) {
+            return $this->invalidSelection($school, 'The selected section is no longer available for this class.');
         }
 
-        // Success: consume the pending payload so the same token cannot be
-        // submitted twice.
-        $request->session()->forget("admission.pending.$token");
-        $request->session()->forget("admission.pending_class.$class");
-        Cache::forget($lockKey);
+        $attributes = $data + [
+            'school_id' => $school->id,
+            'class_id' => $class?->id,
+            'section_id' => $section?->id,
+            'submission_token' => $previewToken,
+        ];
+
+        // The unique submission_token makes double-clicks and browser retries
+        // idempotent even when two requests arrive at the same time.
+        $student = Student::firstOrCreate(
+            ['submission_token' => $previewToken],
+            $attributes
+        );
+
+        if (! $student->wasRecentlyCreated) {
+            $request->session()->forget("admission.pending.$previewToken");
+            $request->session()->forget("admission.pending.school.{$school->id}");
+
+            return redirect()
+                ->route('admission.create', ['token' => $school->admission_token])
+                ->with('error', 'This admission was already submitted. The form was reset to prevent duplicate records.');
+        }
+
+        $request->session()->forget("admission.pending.$previewToken");
+        $request->session()->forget("admission.pending.school.{$school->id}");
 
         return view('admission.success', [
-            'classSlug' => $class,
-            'className' => AdmissionClasses::nameFor($class),
-            'record' => $record,
+            'school' => $school,
+            'className' => $class?->name,
+            'sectionName' => $section?->name,
+            'record' => $data + ['record_id' => $student->id],
         ]);
+    }
+
+    private function school(string $token): School
+    {
+        return School::query()->where('admission_token', $token)->firstOrFail();
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    private function blankRecord(): array
+    {
+        return AdmissionFields::blank() + [
+            'class_id' => null,
+            'section_id' => null,
+        ];
+    }
+
+    /**
+     * @return array<string, string|null>
+     */
+    private function normalize(AdmissionRequest $request): array
+    {
+        $data = AdmissionFields::normalize($request->validated());
+
+        $data['class_id'] = $this->stringOrNull($request->validated('class_id'));
+        $data['section_id'] = $this->stringOrNull($request->validated('section_id'));
+
+        return $data;
+    }
+
+    private function stringOrNull(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (string) $value;
+    }
+
+    private function className(School $school, mixed $classId): ?string
+    {
+        if ($classId === null || $classId === '') {
+            return null;
+        }
+
+        return $school->classes()->whereKey($classId)->value('name');
+    }
+
+    private function sectionName(School $school, mixed $classId, mixed $sectionId): ?string
+    {
+        if ($classId === null || $sectionId === null || $classId === '' || $sectionId === '') {
+            return null;
+        }
+
+        $class = $school->classes()->whereKey($classId)->first();
+
+        if ($class === null) {
+            return null;
+        }
+
+        return $class->sections()->whereKey($sectionId)->value('name');
+    }
+
+    private function invalidSelection(School $school, string $message): RedirectResponse
+    {
+        return redirect()
+            ->route('admission.create', ['token' => $school->admission_token])
+            ->with('error', $message);
     }
 
     /**
      * @param  array<string, string|null>  $record
      * @return array<string, mixed>
      */
-    private function formData(string $class, array $record, ?string $notice = null): array
+    private function formData(School $school, array $record, ?string $notice = null): array
     {
         return [
-            'classSlug' => $class,
-            'className' => AdmissionClasses::nameFor($class),
+            'school' => $school,
+            'classes' => $school->classes()
+                ->with(['sections' => fn ($query) => $query->orderBy('name')])
+                ->orderBy('name')
+                ->get(),
             'fields' => AdmissionFields::all(),
             'required' => AdmissionFields::required(),
             'record' => $record,
             'notice' => $notice,
-            'logoUrl' => SchoolBranding::url(),
+            'logoUrl' => $school->logoUrl() ?: asset('images/logo.png'),
         ];
     }
 
-    private function assertClass(string $class): void
-    {
-        if (! AdmissionClasses::exists($class)) {
-            abort(404, 'Unknown class.');
-        }
-    }
-
     /**
-     * @return array{class: string, data: array<string, string|null>}|null
+     * @return array{school_id: int, data: array<string, string|null>, created_at: int}|null
      */
-    private function pendingForClass(string $class): ?array
+    private function pendingForSchool(School $school): ?array
     {
-        $token = session()->get("admission.pending_class.$class");
+        $previewToken = session()->get("admission.pending.school.{$school->id}");
 
-        if (! is_string($token) || $token === '') {
+        if (! is_string($previewToken) || $previewToken === '') {
             return null;
         }
 
-        $pending = session()->get("admission.pending.$token");
+        $pending = session()->get("admission.pending.$previewToken");
 
-        if (! is_array($pending) || ($pending['class'] ?? null) !== $class) {
+        if (! is_array($pending) || (int) ($pending['school_id'] ?? 0) !== $school->id) {
             return null;
         }
 

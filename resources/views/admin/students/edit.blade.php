@@ -1,7 +1,7 @@
 
 @extends('layouts.app')
 
-@section('title', 'Edit Student · '.$className)
+@section('title', 'Edit Student · '.($className ?? 'Record'))
 
 @section('content')
 <style>
@@ -315,8 +315,14 @@
             <h1>Edit Student</h1>
 
             <p class="es-subtitle">
+                <span>{{ $school->name }}</span>
+
+                <span aria-hidden="true">·</span>
+
                 <span>Class:</span>
-                <span class="es-class-badge">{{ $className }}</span>
+                <span class="es-class-badge">
+                    {{ $className ?? '—' }}@if ($sectionName) · {{ $sectionName }}@endif
+                </span>
 
                 <span aria-hidden="true">·</span>
 
@@ -326,7 +332,7 @@
         </div>
 
         <a class="es-btn"
-           href="{{ route('admin.students.index', ['class' => $classSlug]) }}">
+           href="{{ route('admin.students.index', $school) }}">
             &larr; Back to Students
         </a>
     </div>
@@ -348,7 +354,7 @@
     </div>
 
     <form method="POST"
-          action="{{ route('admin.students.update', ['class' => $classSlug, 'recordId' => $record['record_id']]) }}">
+          action="{{ route('admin.students.update', [$school, $student]) }}">
         @csrf
         @method('PUT')
 
@@ -365,7 +371,7 @@
 
         <div class="es-form-footer">
             <p class="es-footer-note">
-                Please review the details before saving.
+                {{ $school->name }} · Please review the details before saving.
             </p>
 
             <div class="es-form-actions">
@@ -374,7 +380,7 @@
                 </button>
 
                 <a class="es-btn"
-                   href="{{ route('admin.students.index', ['class' => $classSlug]) }}">
+                   href="{{ route('admin.students.index', $school) }}">
                     Cancel
                 </a>
             </div>

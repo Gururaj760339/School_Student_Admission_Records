@@ -1,7 +1,8 @@
-
 <?php
 
 use App\Http\Controllers\Admin\ClassSectionController;
+use App\Http\Controllers\Admin\SchoolController;
+use App\Http\Controllers\Admin\SchoolLogoController;
 use App\Http\Controllers\Admin\StudentController;
 use App\Http\Controllers\AdmissionController;
 use App\Http\Controllers\Auth\LoginController;
@@ -37,7 +38,7 @@ Route::post('/logout', [LoginController::class, 'logout'])
 
 /*
 |--------------------------------------------------------------------------
-| School logo (upload is authenticated; the image itself is public)
+| Installation-wide logo (kept for backwards compatibility)
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth')->group(function () {
@@ -53,91 +54,108 @@ Route::get('/branding/logo/image', [BrandingController::class, 'image'])
 
 /*
 |--------------------------------------------------------------------------
+| Per-school logo image (public; the token is not a database id)
+|--------------------------------------------------------------------------
+*/
+Route::get('/school-logo/{token}', [SchoolLogoController::class, 'image'])
+    ->name('schools.logo.image');
+
+/*
+|--------------------------------------------------------------------------
 | Admission selection page (authenticated users only)
 |--------------------------------------------------------------------------
 */
-Route::get('/admission', [AdmissionController::class, 'select'])
-    ->middleware('auth')
-    ->name('admission.select');
+Route::get('/admission', function () {
+    return redirect()->route('admin.schools.index');
+})->middleware('auth')->name('admission.select');
 
 /*
 |--------------------------------------------------------------------------
 | Public admission form workflow
 |--------------------------------------------------------------------------
-| Guests can open the form, preview, edit and submit an admission.
-| The selection page above remains protected by auth middleware.
+| The school is resolved from the token. Guests can open the form, preview,
+| edit and submit an admission. The selection page above stays protected.
 */
-Route::get('/admission/{class}', [AdmissionController::class, 'create'])
+Route::get('/admission/{token}', [AdmissionController::class, 'create'])
     ->name('admission.create');
 
-Route::post('/admission/{class}/preview', [AdmissionController::class, 'preview'])
+Route::post('/admission/{token}/preview', [AdmissionController::class, 'preview'])
     ->middleware('throttle:20,1')
     ->name('admission.preview');
 
-Route::get('/admission/{class}/edit', [AdmissionController::class, 'edit'])
+Route::get('/admission/{token}/edit', [AdmissionController::class, 'edit'])
     ->name('admission.edit');
 
-Route::post('/admission/{class}/submit', [AdmissionController::class, 'submit'])
+Route::post('/admission/{token}/submit', [AdmissionController::class, 'submit'])
     ->middleware('throttle:20,1')
     ->name('admission.submit');
 
 /*
 |--------------------------------------------------------------------------
-| Admin student management (authenticated)
+| Admin school management (authenticated)
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth')
     ->prefix('admin')
     ->name('admin.')
     ->group(function () {
+        Route::get('/schools', [SchoolController::class, 'index'])
+            ->name('schools.index');
 
-        /*
-        |--------------------------------------------------------------------------
-        | Class & section management
-        |--------------------------------------------------------------------------
-        | Register these routes before the student routes.
-        */
-        Route::get('/students/classes', [ClassSectionController::class, 'index'])
+        Route::post('/schools', [SchoolController::class, 'store'])
+            ->name('schools.store');
+
+        Route::get('/schools/{school}', [SchoolController::class, 'show'])
+            ->name('schools.show');
+
+        Route::get('/schools/{school}/edit', [SchoolController::class, 'edit'])
+            ->name('schools.edit');
+
+        Route::put('/schools/{school}', [SchoolController::class, 'update'])
+            ->name('schools.update');
+
+        Route::delete('/schools/{school}', [SchoolController::class, 'destroy'])
+            ->name('schools.destroy');
+
+        Route::get('/schools/{school}/logo', [SchoolLogoController::class, 'edit'])
+            ->name('logo.edit');
+
+        Route::post('/schools/{school}/logo', [SchoolLogoController::class, 'store'])
+            ->name('logo.store');
+
+        Route::get('/schools/{school}/classes', [ClassSectionController::class, 'index'])
             ->name('classes.index');
 
-        Route::post('/students/classes', [ClassSectionController::class, 'storeClass'])
+        Route::post('/schools/{school}/classes', [ClassSectionController::class, 'storeClass'])
             ->name('classes.store');
 
-        Route::put('/students/classes/{class}', [ClassSectionController::class, 'updateClass'])
+        Route::put('/schools/{school}/classes/{class}', [ClassSectionController::class, 'updateClass'])
             ->name('classes.update');
 
-        Route::delete('/students/classes/{class}', [ClassSectionController::class, 'destroyClass'])
+        Route::delete('/schools/{school}/classes/{class}', [ClassSectionController::class, 'destroyClass'])
             ->name('classes.destroy');
 
-        Route::post('/students/classes/{class}/sections', [ClassSectionController::class, 'storeSection'])
+        Route::post('/schools/{school}/classes/{class}/sections', [ClassSectionController::class, 'storeSection'])
             ->name('sections.store');
 
-        Route::put('/students/sections/{section}', [ClassSectionController::class, 'updateSection'])
+        Route::put('/schools/{school}/classes/{class}/sections/{section}', [ClassSectionController::class, 'updateSection'])
             ->name('sections.update');
 
-        Route::delete('/students/sections/{section}', [ClassSectionController::class, 'destroySection'])
+        Route::delete('/schools/{school}/classes/{class}/sections/{section}', [ClassSectionController::class, 'destroySection'])
             ->name('sections.destroy');
 
-        Route::post('/students/sections/{section}/sync', [ClassSectionController::class, 'sync'])
-            ->name('sections.sync');
-
-        /*
-        |--------------------------------------------------------------------------
-        | Student management
-        |--------------------------------------------------------------------------
-        */
-        Route::get('/students', [StudentController::class, 'index'])
+        Route::get('/schools/{school}/students', [StudentController::class, 'index'])
             ->name('students.index');
 
-        Route::get('/students/{class}/{recordId}', [StudentController::class, 'show'])
+        Route::get('/schools/{school}/students/{student}', [StudentController::class, 'show'])
             ->name('students.show');
 
-        Route::get('/students/{class}/{recordId}/edit', [StudentController::class, 'edit'])
+        Route::get('/schools/{school}/students/{student}/edit', [StudentController::class, 'edit'])
             ->name('students.edit');
 
-        Route::put('/students/{class}/{recordId}', [StudentController::class, 'update'])
+        Route::put('/schools/{school}/students/{student}', [StudentController::class, 'update'])
             ->name('students.update');
 
-        Route::delete('/students/{class}/{recordId}', [StudentController::class, 'destroy'])
+        Route::delete('/schools/{school}/students/{student}', [StudentController::class, 'destroy'])
             ->name('students.destroy');
     });

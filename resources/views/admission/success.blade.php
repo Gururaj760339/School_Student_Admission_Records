@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Admission Submitted')
+@section('title', 'Admission Submitted · '.$school->name)
 
 @section('content')
 <style>
@@ -342,9 +342,9 @@
                     <h1>Admission Submitted</h1>
 
                     <p class="muted">
-                        The record was written to the
-                        <strong>{{ $className }}</strong>
-                        worksheet and confirmed by Google Sheets.
+                        The record was saved to the
+                        <strong>{{ $school->name }}</strong>
+                        database @if ($className) for {{ $className }}@if ($sectionName) · {{ $sectionName }}@endif @endif.
                     </p>
                 </div>
             </div>
@@ -378,6 +378,16 @@
                         </dd>
                     </div>
 
+                    <div class="detail-item as-detail-item">
+                        <dt>Class</dt>
+                        <dd>{{ $className ?? '—' }}</dd>
+                    </div>
+
+                    <div class="detail-item as-detail-item">
+                        <dt>Section</dt>
+                        <dd>{{ $sectionName ?? '—' }}</dd>
+                    </div>
+
                     @foreach ([
                         'admission_number' => 'Admission Number',
                         'first_name' => 'First Name',
@@ -394,7 +404,7 @@
                 {{-- Navigation Actions --}}
                 <div class="form-actions as-actions">
                     <a class="btn btn-primary as-btn as-btn-primary"
-                       href="{{ route('admission.create', ['class' => $classSlug]) }}">
+                       href="{{ route('admission.create', ['token' => $school->admission_token]) }}">
                         <svg viewBox="0 0 24 24" fill="none"
                              stroke="currentColor" stroke-width="1.8"
                              stroke-linecap="round" stroke-linejoin="round"
@@ -405,7 +415,7 @@
                     </a>
 
                     <a class="btn btn-ghost as-btn as-btn-secondary"
-                       href="{{ route('admission.select') }}">
+                       href="{{ auth()->check() ? route('admin.schools.show', $school) : route('admission.create', ['token' => $school->admission_token]) }}">
                         <svg viewBox="0 0 24 24" fill="none"
                              stroke="currentColor" stroke-width="1.8"
                              stroke-linecap="round" stroke-linejoin="round"
@@ -413,7 +423,7 @@
                             <path d="m15 18-6-6 6-6"/>
                             <path d="M9 12h12"/>
                         </svg>
-                        Back to Class Selection
+                        {{ auth()->check() ? 'Back to Dashboard' : 'Back to Admission Form' }}
                     </a>
                 </div>
 
@@ -426,7 +436,7 @@
                         <path d="M12 11v5M12 7h.01"/>
                     </svg>
                     <span>
-                        You can add another student to this class or return to class selection.
+                        You can add another student to this school or return to the admission form.
                     </span>
                 </div>
 

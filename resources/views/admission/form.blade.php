@@ -1,7 +1,6 @@
-
 @extends('layouts.app')
 
-@section('title', 'Admission Form · ' . $className)
+@section('title', 'Admission Form · ' . $school->name)
 
 @section('content')
 <style>
@@ -53,22 +52,19 @@
         );
     }
 
+    /* Logo only: no background, no border, no shadow */
     .admission-form-page .af-crest {
-        width: 76px;
-        height: 76px;
+        width: 90px;
+        height: 90px;
         display: flex;
         align-items: center;
         justify-content: center;
         margin: 0 auto 15px;
-        border-radius: 18px;
-        color: white;
-        background: linear-gradient(
-            135deg,
-            #0a1e3d,
-            #1d4ed8
-        );
-        box-shadow: 0 5px 14px rgba(30, 58, 138, .18);
-        font-size: 29px;
+        padding: 0;
+        background: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
     }
 
     .admission-form-page .af-crest-logo {
@@ -78,6 +74,9 @@
         max-width: 100%;
         max-height: 100%;
         object-fit: contain;
+        background: none;
+        border: 0;
+        box-shadow: none;
     }
 
     .admission-form-page .af-institution h1 {
@@ -396,33 +395,18 @@
 
 <div class="admission-form-page">
 
-    <div class="af-crest">
-    <img src="{{ asset('images/logo.png') }}"
-         alt="YesEdu School And College logo"
-         class="af-crest-logo"
-         onerror="console.error('Logo failed to load:', this.src)">
-</div>
-
     {{-- Institutional identity --}}
-    {{-- <section class="af-card af-institution">
+    <section class="af-card af-institution">
         <div class="af-top-line"></div>
 
-        @if (!empty($logoUrl))
-    <div class="af-crest">
-        <img src="{{ $logoUrl }}"
-             alt="YesEdu School And College logo"
-             class="af-crest-logo">
-    </div>
-@else
-    <div class="af-crest">
-        <img src="{{ asset('images/logo.png') }}"
-             alt="YesEdu School And College logo"
-             class="af-crest-logo">
-    </div>
-@endif --}}
+        <div class="af-crest">
+            <img src="{{ $logoUrl }}"
+                 alt="{{ $school->name }} logo"
+                 class="af-crest-logo"
+                 onerror="this.onerror=null;this.src='{{ asset('images/logo.png') }}';">
+        </div>
 
-        <h1>YesEdu School And College</h1>
-        <p lang="bn">ইয়েস এডু স্কুল অ্যান্ড কলেজ</p>
+        <h1>{{ $school->name }}</h1>
 
         <div class="af-pill">
             শিক্ষার্থীর তথ্য সংগ্রহ ফরম
@@ -447,21 +431,23 @@
         </div>
     </section>
 
-    {{-- Class information --}}
+    {{-- School context --}}
     <section class="af-card af-context">
         <div>
             <h2>Admission Form</h2>
             <p>
-                Class:
-                <span class="af-class-name">{{ $className }}</span>
+                School:
+                <span class="af-class-name">{{ $school->name }}</span>
+            </p>
+            <p class="muted small" style="margin-bottom: 0;">
+                Select the class and section in the form below.
             </p>
         </div>
 
-        {{-- Selection page is protected by auth, so show this link only to authenticated users. --}}
         @auth
-            <a href="{{ route('admission.select') }}"
+            <a href="{{ route('admin.schools.show', $school) }}"
                class="af-btn af-btn-secondary">
-                &larr; Change Class
+                &larr; Dashboard
             </a>
         @endauth
     </section>
@@ -512,10 +498,59 @@
             </p>
 
             <form method="POST"
-                  action="{{ route('admission.preview', ['class' => $classSlug]) }}">
+                  action="{{ route('admission.preview', ['token' => $school->admission_token]) }}">
                 @csrf
 
                 <div class="form-grid af-fields">
+                    <div class="form-field {{ $errors->has('class_id') ? 'has-error' : '' }}">
+                        <label for="admission-class">
+                            Class <span class="af-bengali" lang="bn">(শ্রেণি)</span>
+                        </label>
+
+                        <select id="admission-class" name="class_id" autocomplete="off">
+                            <option value="">— select class —</option>
+
+                            @foreach ($classes as $class)
+                                <option
+                                    value="{{ $class->id }}"
+                                    @selected((string) old('class_id', $record['class_id'] ?? '') === (string) $class->id)
+                                >
+                                    {{ $class->name }}
+                                </option>
+                            @endforeach
+                        </select>
+
+                        @error('class_id')
+                            <p class="field-error">{{ $message }}</p>
+                        @enderror
+                    </div>
+
+                    <div class="form-field {{ $errors->has('section_id') ? 'has-error' : '' }}">
+                        <label for="admission-section">
+                            Section <span class="af-bengali" lang="bn">(শাখা)</span>
+                        </label>
+
+                        <select id="admission-section" name="section_id" autocomplete="off">
+                            <option value="">— select section —</option>
+
+                            @foreach ($classes as $class)
+                                @foreach ($class->sections as $section)
+                                    <option
+                                        value="{{ $section->id }}"
+                                        data-class="{{ $class->id }}"
+                                        @selected((string) old('section_id', $record['section_id'] ?? '') === (string) $section->id)
+                                    >
+                                        {{ $class->name }} - {{ $section->name }}
+                                    </option>
+                                @endforeach
+                            @endforeach
+                        </select>
+
+                        @error('section_id')
+                            <p class="field-error">{{ $message }}</p>
+                        @enderror
+                    </div>
+
                     @foreach ($fields as $name => $field)
                         @include('partials.field', [
                             'name' => $name,
@@ -532,7 +567,7 @@
                     </button>
 
                     @auth
-                        <a href="{{ route('admission.select') }}"
+                        <a href="{{ route('admin.schools.show', $school) }}"
                            class="af-btn af-btn-secondary">
                             Cancel
                         </a>
@@ -547,7 +582,7 @@
     </section>
 
     <footer class="af-footer">
-        <div>© {{ date('Y') }} YesEdu School And College. All rights reserved.</div>
+        <div>© {{ date('Y') }} {{ $school->name }}. All rights reserved.</div>
         <div>School Management System Software Powered by Yes Bangladesh.</div>
     </footer>
 
@@ -672,6 +707,83 @@ document.addEventListener('DOMContentLoaded', function () {
         label.appendChild(document.createTextNode(' '));
         label.appendChild(span);
     });
+});
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const classSelect = document.getElementById('admission-class');
+    const sectionSelect = document.getElementById('admission-section');
+
+    if (!classSelect || !sectionSelect) {
+        return;
+    }
+
+    const sections = Array.from(sectionSelect.options)
+        .filter(function (option) {
+            return option.value !== '';
+        })
+        .map(function (option) {
+            return {
+                value: option.value,
+                text: option.textContent,
+                classId: option.dataset.class
+            };
+        });
+
+    function refreshSections() {
+        const classId = classSelect.value;
+        const current = sectionSelect.value;
+
+        sectionSelect.innerHTML = '';
+
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = '— select section —';
+        sectionSelect.appendChild(placeholder);
+
+        sections.forEach(function (section) {
+            if (classId !== '' && section.classId !== classId) {
+                return;
+            }
+
+            const option = document.createElement('option');
+            option.value = section.value;
+            option.textContent = section.text;
+            option.dataset.class = section.classId;
+            option.selected = section.value === current;
+
+            sectionSelect.appendChild(option);
+        });
+
+        if (sectionSelect.value !== current) {
+            sectionSelect.value = '';
+        }
+    }
+
+    if (classSelect.value === '') {
+        const classOptions = Array.from(classSelect.options).filter(function (option) {
+            return option.value !== '';
+        });
+
+        if (classOptions.length === 1) {
+            classSelect.value = classOptions[0].value;
+        }
+    }
+
+    refreshSections();
+
+    if (sectionSelect.value === '') {
+        const sectionOptions = Array.from(sectionSelect.options).filter(function (option) {
+            return option.value !== '';
+        });
+
+        if (sectionOptions.length === 1) {
+            sectionSelect.value = sectionOptions[0].value;
+        }
+    }
+
+    classSelect.addEventListener('change', refreshSections);
 });
 </script>
 @endsection

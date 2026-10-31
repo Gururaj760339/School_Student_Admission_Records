@@ -632,6 +632,31 @@
         }
     }
 
+    .classes-page .cs-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .classes-page .cs-inline-form {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+    }
+
+    .classes-page .cs-inline-form .cs-input {
+        width: auto;
+        min-width: 130px;
+        flex: 0 1 180px;
+    }
+
+    .classes-page .cs-class-heading {
+        justify-content: space-between;
+    }
+
     @media (prefers-reduced-motion: reduce) {
         .classes-page *,
         .classes-page *::before,
@@ -661,8 +686,7 @@
             <div>
                 <h1>Manage Classes &amp; Sections</h1>
                 <p class="cs-subtitle">
-                    Organize your academic classes and manage their sections
-                    with Google Sheets synchronization.
+                    {{ $school->name }} · Organize this school's academic classes and sections.
                 </p>
             </div>
         </div>
@@ -730,7 +754,7 @@
         <div class="cs-card-body">
             <form
                 method="POST"
-                action="{{ route('admin.classes.store') }}"
+                action="{{ route('admin.classes.store', $school) }}"
                 id="class-section-form"
             >
                 @csrf
@@ -759,7 +783,7 @@
                                 id="class-name"
                                 name="name"
                                 value="{{ old('name') }}"
-                                placeholder="e.g. Class 1"
+                                placeholder="e.g. Grade 1"
                                 maxlength="100"
                                 autocomplete="off"
                                 required
@@ -834,7 +858,7 @@
         <div>
             <h2>All Class &amp; Section Data</h2>
             <p>
-                View registered classes, their sections and Google Sheets sync status.
+                View and manage this school's registered classes and sections.
             </p>
         </div>
 
@@ -865,6 +889,43 @@
                         registered
                     </p>
                 </div>
+
+                <div class="cs-actions">
+                    <form
+                        method="POST"
+                        action="{{ route('admin.classes.update', [$school, $class]) }}"
+                        class="cs-inline-form"
+                        style="margin-top: 0;"
+                    >
+                        @csrf
+                        @method('PUT')
+
+                        <input
+                            type="text"
+                            class="cs-input"
+                            name="name"
+                            value="{{ $class->name }}"
+                            maxlength="100"
+                            aria-label="Rename {{ $class->name }}"
+                            required
+                        >
+
+                        <button type="submit" class="cs-btn cs-btn-secondary">Rename</button>
+                    </form>
+
+                    <form method="POST" action="{{ route('admin.classes.destroy', [$school, $class]) }}">
+                        @csrf
+                        @method('DELETE')
+
+                        <button
+                            type="submit"
+                            class="cs-btn cs-btn-secondary"
+                            data-confirm="Delete class {{ $class->name }}? All of its sections will also be removed."
+                        >
+                            Delete Class
+                        </button>
+                    </form>
+                </div>
             </div>
 
             @forelse ($class->sections as $section)
@@ -887,68 +948,42 @@
                         </div>
                     </div>
 
-                    {{-- Worksheet Name --}}
-                    <div>
-                        <span class="cs-meta-label">Google Sheets Worksheet</span>
-
-                        <code class="cs-worksheet">{{ $section->worksheetName() }}</code>
-                    </div>
-
-                    {{-- Sync Status --}}
-                    <div class="cs-sync-row">
-                        <span class="cs-sync-label">Sync Status</span>
-
-                        @if ($section->google_sync_status === \App\Models\Section::SYNC_SYNCED)
-                            <span class="cs-sync-badge cs-sync-synced">
-                                <span class="cs-sync-dot"></span>
-                                Synced
-                            </span>
-                        @elseif ($section->google_sync_status === \App\Models\Section::SYNC_FAILED)
-                            <span class="cs-sync-badge cs-sync-failed">
-                                <span class="cs-sync-dot"></span>
-                                Failed
-                            </span>
-                        @else
-                            <span class="cs-sync-badge cs-sync-pending">
-                                <span class="cs-sync-dot"></span>
-                                Pending
-                            </span>
-                        @endif
-                    </div>
-
-                    {{-- Sync Error --}}
-                    @if (
-                        $section->google_sync_status === \App\Models\Section::SYNC_FAILED
-                        && $section->google_sync_error
-                    )
-                        <p class="cs-sync-error">
-                            {{ $section->google_sync_error }}
-                        </p>
-                    @endif
-
-                    {{-- Retry Google Sheets Synchronization --}}
-                    @if ($section->google_sync_status !== \App\Models\Section::SYNC_SYNCED)
+                    <div class="cs-actions">
                         <form
                             method="POST"
-                            action="{{ route('admin.sections.sync', ['section' => $section]) }}"
-                            class="cs-retry-form"
+                            action="{{ route('admin.sections.update', [$school, $class, $section]) }}"
+                            class="cs-inline-form"
+                            style="margin-top: 0;"
                         >
                             @csrf
+                            @method('PUT')
 
-                            <button type="submit" class="cs-btn cs-btn-secondary">
-                                <svg viewBox="0 0 24 24" fill="none"
-                                     stroke="currentColor" stroke-width="1.8"
-                                     stroke-linecap="round" stroke-linejoin="round"
-                                     aria-hidden="true">
-                                    <path d="M20 7v5h-5"/>
-                                    <path d="M4 17v-5h5"/>
-                                    <path d="M5.6 9a7 7 0 0 1 11.5-2.5L20 12"/>
-                                    <path d="M4 12l2.9 5.5A7 7 0 0 0 18.4 15"/>
-                                </svg>
-                                Retry Sync
+                            <input
+                                type="text"
+                                class="cs-input"
+                                name="name"
+                                value="{{ $section->name }}"
+                                maxlength="100"
+                                aria-label="Rename section {{ $section->name }}"
+                                required
+                            >
+
+                            <button type="submit" class="cs-btn cs-btn-secondary">Rename</button>
+                        </form>
+
+                        <form method="POST" action="{{ route('admin.sections.destroy', [$school, $class, $section]) }}">
+                            @csrf
+                            @method('DELETE')
+
+                            <button
+                                type="submit"
+                                class="cs-btn cs-btn-secondary"
+                                data-confirm="Delete section {{ $section->name }}?"
+                            >
+                                Delete Section
                             </button>
                         </form>
-                    @endif
+                    </div>
                 </div>
 
                 @if ($loop->last)
@@ -962,6 +997,27 @@
                 </div>
             @endforelse
 
+            <form
+                method="POST"
+                action="{{ route('admin.sections.store', [$school, $class]) }}"
+                class="cs-inline-form"
+                style="padding: 0 20px 20px;"
+            >
+                @csrf
+
+                <input
+                    type="text"
+                    class="cs-input"
+                    name="name"
+                    value="{{ old('name') }}"
+                    placeholder="Add another section, e.g. B"
+                    maxlength="100"
+                    aria-label="New section name for {{ $class->name }}"
+                    required
+                >
+
+                <button type="submit" class="cs-btn cs-btn-secondary">Add Section</button>
+            </form>
         </div>
     @empty
         <div class="cs-empty">

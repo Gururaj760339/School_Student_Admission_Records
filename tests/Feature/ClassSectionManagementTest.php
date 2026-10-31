@@ -2,47 +2,49 @@
 
 namespace Tests\Feature;
 
-use App\Exceptions\GoogleSheetsException;
-use App\Jobs\SyncSectionWorksheet;
+use App\Models\School;
 use App\Models\SchoolClass;
 use App\Models\Section;
 use App\Models\User;
-use App\Services\GoogleSheetsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Queue;
-use Tests\Support\FakeGoogleSheetsService;
 use Tests\TestCase;
 
 class ClassSectionManagementTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function fake(): FakeGoogleSheetsService
-    {
-        $fake = new FakeGoogleSheetsService;
-        $this->app->instance(GoogleSheetsService::class, $fake);
-
-        return $fake;
-    }
-
     private function admin(): User
     {
         return User::factory()->create();
     }
 
-    private function createClass(User $admin, string $name = 'Class 1'): SchoolClass
+    private function school(string $name = 'Alpha School'): School
     {
-        $this->actingAs($admin)
-            ->post(route('admin.classes.store'), ['name' => $name])
-            ->assertRedirect();
-
-        return SchoolClass::query()->where('name', $name)->firstOrFail();
+        return School::create(['name' => $name]);
     }
 
-    private function createSection(User $admin, SchoolClass $class, string $name = 'A'): Section
+    private function createClass(School $school, string $name = 'Class 1', ?string $section = null): SchoolClass
     {
-        $this->actingAs($admin)
-            ->post(route('admin.sections.store', ['class' => $class]), ['name' => $name])
+        $payload = ['name' => $name];
+
+        if ($section !== null) {
+            $payload['section_name'] = $section;
+        }
+
+        $this->actingAs($this->admin())
+            ->post(route('admin.classes.store', $school), $payload)
+            ->assertRedirect();
+
+        return SchoolClass::query()
+            ->where('school_id', $school->id)
+            ->where('name', $name)
+            ->firstOrFail();
+    }
+
+    private function createSection(School $school, SchoolClass $class, string $name = 'A'): Section
+    {
+        $this->actingAs($this->admin())
+            ->post(route('admin.sections.store', [$school, $class]), ['name' => $name])
             ->assertRedirect();
 
         return Section::query()
@@ -51,109 +53,101 @@ class ClassSectionManagementTest extends TestCase
             ->firstOrFail();
     }
 
-    /**
-     * @return array<string, string>
-     */
-    private function validPayload(): array
-    {
-        return [
-            'first_name' => 'Asha',
-            'last_name' => 'Kumar',
-            'gender' => 'Female',
-            'date_of_birth' => '2015-06-01',
-            'mobile' => '09876543210',
-        ];
-    }
-
-    private function extractToken(string $html): string
-    {
-        preg_match('/name="submission_token" value="([^"]+)"/', $html, $matches);
-
-        return $matches[1] ?? '';
-    }
-
     public function test_guests_cannot_manage_classes_or_sections(): void
     {
-        $this->fake();
+        $school = $this->school();
 
-        $this->get(route('admin.classes.index'))->assertRedirect(route('login'));
-        $this->post(route('admin.classes.store'), ['name' => 'Class 1'])->assertRedirect(route('login'));
+        $this->get(route('admin.classes.index', $school))->assertRedirect(route('login'));
+        $this->post(route('admin.classes.store', $school), ['name' => 'Class 1'])->assertRedirect(route('login'));
     }
 
     public function test_admin_can_view_the_management_page(): void
     {
-        $this->fake();
+        $school = $this->school();
 
         $this->actingAs($this->admin())
-            ->get(route('admin.classes.index'))
+            ->get(route('admin.classes.index', $school))
             ->assertOk()
-            ->assertSee('Classes &amp; Sections', false);
+            ->assertSee('Classes &amp; Sections', false)
+            ->assertSee('Alpha School');
     }
 
-    public function test_management_page_shows_sections_and_sync_status(): void
+    public function test_management_page_shows_classes_and_sections(): void
     {
-        $this->fake();
-        $admin = $this->admin();
-        $class = $this->createClass($admin);
-        $this->createSection($admin, $class, 'A');
+        $school = $this->school();
+        $class = $this->createClass($school, 'Class 1', 'A');
 
-        $this->actingAs($admin)
-            ->get(route('admin.classes.index'))
+        $this->actingAs($this->admin())
+            ->get(route('admin.classes.index', $school))
             ->assertOk()
             ->assertSee('Class 1')
-            ->assertSee('Class 1 - A')
-            ->assertSee('Synced');
+            ->assertSee('Section A')
+            ->assertDontSee('Google Sheets');
     }
 
-    public function test_admin_can_create_a_class(): void
+    public function test_admin_can_create_a_class_with_a_section(): void
     {
-        $this->fake();
-        $admin = $this->admin();
+        $school = $this->school();
 
-        $this->actingAs($admin)
-            ->post(route('admin.classes.store'), ['name' => 'Class 1'])
+        $this->actingAs($this->admin())
+            ->post(route('admin.classes.store', $school), [
+                'name' => 'Class 1',
+                'section_name' => 'A',
+            ])
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('school_classes', [
+            'school_id' => $school->id,
+            'name' => 'Class 1',
+            'slug' => 'class-1',
+        ]);
+
+        $this->assertDatabaseHas('sections', ['name' => 'A']);
+    }
+
+    public function test_admin_can_create_a_class_without_a_section(): void
+    {
+        $school = $this->school();
+
+        $this->actingAs($this->admin())
+            ->post(route('admin.classes.store', $school), ['name' => 'Class 1'])
             ->assertRedirect();
 
-        $this->assertDatabaseHas('school_classes', ['name' => 'Class 1', 'slug' => 'class-1']);
+        $this->assertDatabaseHas('school_classes', ['name' => 'Class 1']);
+        $this->assertDatabaseCount('sections', 0);
     }
 
-    public function test_class_names_must_be_unique(): void
+    public function test_class_names_must_be_unique_within_a_school(): void
     {
-        $this->fake();
-        $admin = $this->admin();
+        $school = $this->school();
+        $this->createClass($school);
 
-        $this->createClass($admin);
-
-        $this->actingAs($admin)
-            ->post(route('admin.classes.store'), ['name' => 'Class 1'])
+        $this->actingAs($this->admin())
+            ->post(route('admin.classes.store', $school), ['name' => 'Class 1'])
             ->assertSessionHasErrors('name');
 
         $this->assertSame(1, SchoolClass::query()->count());
     }
 
-    public function test_creating_a_section_creates_its_worksheet_with_headers(): void
+    public function test_the_same_class_name_is_allowed_in_a_different_school(): void
     {
-        $fake = $this->fake();
-        $admin = $this->admin();
-        $class = $this->createClass($admin);
+        $schoolA = $this->school('Alpha School');
+        $schoolB = $this->school('Beta School');
 
-        $section = $this->createSection($admin, $class, 'A');
+        $this->createClass($schoolA, 'Class 1');
+        $this->createClass($schoolB, 'Class 1');
 
-        $this->assertSame('Class 1 - A', $section->worksheet);
-        $this->assertSame(Section::SYNC_SYNCED, $section->google_sync_status);
-        $this->assertContains('Class 1 - A', $fake->createdWorksheets);
+        $this->assertSame(2, SchoolClass::query()->where('name', 'Class 1')->count());
     }
 
     public function test_section_names_must_be_unique_within_the_same_class(): void
     {
-        $this->fake();
-        $admin = $this->admin();
-        $class = $this->createClass($admin);
+        $school = $this->school();
+        $class = $this->createClass($school, 'Class 1', 'A');
 
-        $this->createSection($admin, $class, 'A');
-
-        $this->actingAs($admin)
-            ->post(route('admin.sections.store', ['class' => $class]), ['name' => 'A'])
+        $this->actingAs($this->admin())
+            ->post(route('admin.sections.store', [$school, $class]), ['name' => 'A'])
             ->assertSessionHasErrors('name');
 
         $this->assertSame(1, Section::query()->count());
@@ -161,192 +155,147 @@ class ClassSectionManagementTest extends TestCase
 
     public function test_same_section_name_is_allowed_in_a_different_class(): void
     {
-        $this->fake();
-        $admin = $this->admin();
-        $classOne = $this->createClass($admin, 'Class 1');
-        $classTwo = $this->createClass($admin, 'Class 2');
+        $school = $this->school();
+        $classOne = $this->createClass($school, 'Class 1');
+        $classTwo = $this->createClass($school, 'Class 2');
 
-        $this->createSection($admin, $classOne, 'A');
-        $this->createSection($admin, $classTwo, 'A');
+        $this->createSection($school, $classOne, 'A');
+        $this->createSection($school, $classTwo, 'A');
 
         $this->assertSame(2, Section::query()->count());
     }
 
-    public function test_renaming_a_section_renames_its_worksheet_without_losing_records(): void
+    public function test_admin_can_rename_a_class_and_a_section(): void
     {
-        $fake = $this->fake();
-        $admin = $this->admin();
-        $class = $this->createClass($admin);
-        $section = $this->createSection($admin, $class, 'A');
+        $school = $this->school();
+        $class = $this->createClass($school, 'Class 1', 'A');
+        $section = $class->sections()->firstOrFail();
 
-        $this->actingAs($admin)
-            ->put(route('admin.sections.update', ['section' => $section]), ['name' => 'B'])
+        $this->actingAs($this->admin())
+            ->put(route('admin.classes.update', [$school, $class]), ['name' => 'Grade 1'])
             ->assertRedirect();
 
-        $section->refresh();
-
-        $this->assertSame('B', $section->name);
-        $this->assertSame('Class 1 - B', $section->worksheet);
-        $this->assertContains(
-            ['from' => 'Class 1 - A', 'to' => 'Class 1 - B'],
-            $fake->renamedWorksheets
-        );
-    }
-
-    public function test_renaming_a_class_resynchronises_its_sections(): void
-    {
-        $fake = $this->fake();
-        $admin = $this->admin();
-        $class = $this->createClass($admin);
-        $section = $this->createSection($admin, $class, 'A');
-
-        $this->actingAs($admin)
-            ->put(route('admin.classes.update', ['class' => $class]), ['name' => 'Grade 1'])
+        $this->actingAs($this->admin())
+            ->put(route('admin.sections.update', [$school, $class, $section]), ['name' => 'B'])
             ->assertRedirect();
 
-        $section->refresh();
-
-        $this->assertSame('Grade 1 - A', $section->worksheet);
-        $this->assertContains(
-            ['from' => 'Class 1 - A', 'to' => 'Grade 1 - A'],
-            $fake->renamedWorksheets
-        );
+        $this->assertSame('Grade 1', $class->refresh()->name);
+        $this->assertSame('B', $section->refresh()->name);
     }
 
-    public function test_repeated_sync_does_not_create_duplicate_worksheets(): void
+    public function test_section_with_students_cannot_be_deleted(): void
     {
-        $fake = $this->fake();
-        $admin = $this->admin();
-        $class = $this->createClass($admin);
-        $section = $this->createSection($admin, $class, 'A');
+        $school = $this->school();
+        $class = $this->createClass($school, 'Class 1', 'A');
+        $section = $class->sections()->firstOrFail();
 
-        $this->actingAs($admin)
-            ->post(route('admin.sections.sync', ['section' => $section]))
-            ->assertRedirect();
+        $school->students()->create([
+            'class_id' => $class->id,
+            'section_id' => $section->id,
+            'first_name' => 'Asha',
+            'last_name' => 'Kumar',
+            'gender' => 'Female',
+            'date_of_birth' => '2015-06-01',
+            'mobile' => '09876543210',
+        ]);
 
-        $this->assertCount(1, $fake->createdWorksheets);
-    }
-
-    public function test_sync_failure_keeps_the_record_and_queues_a_retry(): void
-    {
-        Queue::fake();
-        $fake = $this->fake();
-        $fake->throwOnSync = GoogleSheetsException::credentialsMissing('storage/app/google/service-account.json');
-
-        $admin = $this->admin();
-        $class = $this->createClass($admin);
-
-        $this->actingAs($admin)
-            ->post(route('admin.sections.store', ['class' => $class]), ['name' => 'A'])
-            ->assertRedirect()
-            ->assertSessionHas('warning');
-
-        $section = Section::query()->firstOrFail();
-
-        $this->assertSame(Section::SYNC_FAILED, $section->google_sync_status);
-        $this->assertNotNull($section->google_sync_error);
-        Queue::assertPushed(SyncSectionWorksheet::class, fn ($job) => $job->sectionId === $section->id);
-    }
-
-    public function test_section_with_records_cannot_be_deleted(): void
-    {
-        $fake = $this->fake();
-        $admin = $this->admin();
-        $class = $this->createClass($admin);
-        $section = $this->createSection($admin, $class, 'A');
-
-        $fake->worksheetsWithRecords['Class 1 - A'] = true;
-
-        $this->actingAs($admin)
-            ->delete(route('admin.sections.destroy', ['section' => $section]))
+        $this->actingAs($this->admin())
+            ->delete(route('admin.sections.destroy', [$school, $class, $section]))
             ->assertRedirect()
             ->assertSessionHas('error');
 
         $this->assertDatabaseHas('sections', ['id' => $section->id]);
-        $this->assertSame([], $fake->deletedWorksheets);
     }
 
-    public function test_empty_section_can_be_deleted_and_its_worksheet_removed(): void
+    public function test_empty_section_can_be_deleted(): void
     {
-        $fake = $this->fake();
-        $admin = $this->admin();
-        $class = $this->createClass($admin);
-        $section = $this->createSection($admin, $class, 'A');
+        $school = $this->school();
+        $class = $this->createClass($school, 'Class 1', 'A');
+        $section = $class->sections()->firstOrFail();
 
-        $this->actingAs($admin)
-            ->delete(route('admin.sections.destroy', ['section' => $section]))
+        $this->actingAs($this->admin())
+            ->delete(route('admin.sections.destroy', [$school, $class, $section]))
             ->assertRedirect()
             ->assertSessionHas('success');
 
         $this->assertDatabaseMissing('sections', ['id' => $section->id]);
-        $this->assertContains('Class 1 - A', $fake->deletedWorksheets);
+    }
+
+    public function test_class_with_students_cannot_be_deleted(): void
+    {
+        $school = $this->school();
+        $class = $this->createClass($school, 'Class 1', 'A');
+
+        $school->students()->create([
+            'class_id' => $class->id,
+            'first_name' => 'Asha',
+            'last_name' => 'Kumar',
+            'gender' => 'Female',
+            'date_of_birth' => '2015-06-01',
+            'mobile' => '09876543210',
+        ]);
+
+        $this->actingAs($this->admin())
+            ->delete(route('admin.classes.destroy', [$school, $class]))
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $this->assertDatabaseHas('school_classes', ['id' => $class->id]);
+    }
+
+    public function test_empty_class_can_be_deleted(): void
+    {
+        $school = $this->school();
+        $class = $this->createClass($school, 'Class 1', 'A');
+
+        $this->actingAs($this->admin())
+            ->delete(route('admin.classes.destroy', [$school, $class]))
+            ->assertRedirect()
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseMissing('school_classes', ['id' => $class->id]);
+        $this->assertDatabaseCount('sections', 0);
+    }
+
+    public function test_classes_and_sections_cannot_be_managed_through_another_school(): void
+    {
+        $schoolA = $this->school('Alpha School');
+        $schoolB = $this->school('Beta School');
+        $class = $this->createClass($schoolA, 'Class 1', 'A');
+        $section = $class->sections()->firstOrFail();
+
+        $this->actingAs($this->admin())
+            ->get(route('admin.classes.index', $schoolB))
+            ->assertOk()
+            ->assertSee('No Classes Found');
+
+        $this->actingAs($this->admin())
+            ->put(route('admin.classes.update', [$schoolB, $class]), ['name' => 'Hijacked'])
+            ->assertNotFound();
+
+        $this->actingAs($this->admin())
+            ->put(route('admin.sections.update', [$schoolB, $class, $section]), ['name' => 'Hijacked'])
+            ->assertNotFound();
     }
 
     public function test_public_admission_page_lists_classes_and_sections_dynamically(): void
     {
-        $this->fake();
-        $admin = $this->admin();
-        $classOne = $this->createClass($admin, 'Class 1');
-        $classTwo = $this->createClass($admin, 'Class 2');
-        $this->createSection($admin, $classOne, 'A');
-        $this->createSection($admin, $classOne, 'B');
-        $this->createSection($admin, $classTwo, 'A');
+        $school = $this->school();
+        $classOne = $this->createClass($school, 'Class 1', 'A');
+        $classTwo = $this->createClass($school, 'Class 2', 'B');
+        $this->createSection($school, $classOne, 'C');
 
-        $this->get(route('admission.select'))
+        $this->get(route('admission.create', ['token' => $school->admission_token]))
             ->assertOk()
             ->assertSee('Class 1')
             ->assertSee('Class 2')
-            ->assertSee('Section A')
-            ->assertSee('Section B');
+            ->assertSee('Class 1 - A')
+            ->assertSee('Class 1 - C')
+            ->assertSee('Class 2 - B');
     }
 
-    public function test_admission_uses_the_section_worksheet_from_the_database(): void
+    public function test_unknown_school_token_cannot_reach_the_admission_form(): void
     {
-        $fake = $this->fake();
-        $admin = $this->admin();
-        $class = $this->createClass($admin, 'Class 1');
-        $section = $this->createSection($admin, $class, 'A');
-
-        // The form identifies the class and section.
-        $this->get(route('admission.create', ['class' => $section->slug]))
-            ->assertOk()
-            ->assertSee('Class 1 - A');
-
-        // Submitting writes to the correct worksheet, resolved server-side.
-        $preview = $this->post(route('admission.preview', ['class' => $section->slug]), $this->validPayload());
-        $token = $this->extractToken($preview->getContent());
-
-        $this->post(route('admission.submit', ['class' => $section->slug]), ['submission_token' => $token])
-            ->assertOk()
-            ->assertSee('Admission submitted');
-
-        $this->assertCount(1, $fake->appended);
-        $this->assertSame('Class 1 - A', $fake->appended[0]['worksheet']);
-    }
-
-    public function test_unknown_section_slug_cannot_reach_a_worksheet(): void
-    {
-        $this->fake();
-        $admin = $this->admin();
-        $class = $this->createClass($admin, 'Class 1');
-        $this->createSection($admin, $class, 'A');
-
-        $this->get(route('admission.create', ['class' => 'does-not-exist']))->assertNotFound();
-
-        $this->post(route('admission.preview', ['class' => 'does-not-exist']), $this->validPayload())
-            ->assertNotFound();
-    }
-
-    public function test_admission_page_drops_legacy_classes_once_a_database_class_exists(): void
-    {
-        $this->fake();
-        $admin = $this->admin();
-        $class = $this->createClass($admin, 'Class 7');
-        $this->createSection($admin, $class, 'A');
-
-        $this->get(route('admission.select'))
-            ->assertOk()
-            ->assertSee('Class 7')
-            ->assertDontSee('Class 2');
+        $this->get(route('admission.create', ['token' => 'does-not-exist']))->assertNotFound();
     }
 }

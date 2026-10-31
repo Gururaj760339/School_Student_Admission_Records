@@ -1,7 +1,7 @@
 
 @extends('layouts.app')
 
-@section('title', 'Student · '.$className)
+@section('title', 'Student · '.($className ?? 'Record'))
 
 @section('content')
 <style>
@@ -339,8 +339,14 @@
             <h1>Student Record</h1>
 
             <p class="sr-subtitle">
+                <span>{{ $school->name }}</span>
+
+                <span class="sr-dot">·</span>
+
                 <span>Class:</span>
-                <span class="sr-class-badge">{{ $className }}</span>
+                <span class="sr-class-badge">
+                    {{ $className ?? '—' }}@if ($sectionName) · {{ $sectionName }}@endif
+                </span>
 
                 <span class="sr-dot">·</span>
 
@@ -351,16 +357,14 @@
 
         <div class="sr-header-actions">
             <a class="sr-btn"
-               href="{{ route('admin.students.index', ['class' => $classSlug]) }}">
+               href="{{ route('admin.students.index', $school) }}">
                 &larr; Back
             </a>
 
-            @if (! empty($record['record_id']))
-                <a class="sr-btn sr-btn-primary"
-                   href="{{ route('admin.students.edit', ['class' => $classSlug, 'recordId' => $record['record_id']]) }}">
-                    Edit Record
-                </a>
-            @endif
+            <a class="sr-btn sr-btn-primary"
+               href="{{ route('admin.students.edit', [$school, $student]) }}">
+                Edit Record
+            </a>
         </div>
     </div>
 
@@ -391,27 +395,25 @@
 
     <div class="sr-footer">
         <p class="sr-footer-note">
-            Student record details
+            {{ $school->name }} · Student record details
         </p>
 
         <div class="sr-footer-actions">
             <a class="sr-btn"
-               href="{{ route('admin.students.index', ['class' => $classSlug]) }}">
+               href="{{ route('admin.students.index', $school) }}">
                 Back to List
             </a>
 
-            @if (! empty($record['record_id']))
-                <form method="POST"
-                      action="{{ route('admin.students.destroy', ['class' => $classSlug, 'recordId' => $record['record_id']]) }}"
-                      data-confirm="Delete this student record? This action cannot be undone.">
-                    @csrf
-                    @method('DELETE')
+            <form method="POST"
+                  action="{{ route('admin.students.destroy', [$school, $student]) }}"
+                  data-confirm="Delete this student record? This action cannot be undone.">
+                @csrf
+                @method('DELETE')
 
-                    <button type="submit" class="sr-btn sr-btn-danger">
-                        Delete Record
-                    </button>
-                </form>
-            @endif
+                <button type="submit" class="sr-btn sr-btn-danger">
+                    Delete Record
+                </button>
+            </form>
         </div>
     </div>
 </div>

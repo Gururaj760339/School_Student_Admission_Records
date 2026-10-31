@@ -119,7 +119,7 @@
     .manage-students-page .ms-filter-bar {
         display: grid;
         grid-template-columns: minmax(0, 2fr) minmax(0, 1fr)
-                               minmax(0, 1fr) auto;
+                               minmax(0, 1fr) minmax(0, 1fr) auto;
         align-items: end;
         gap: 14px;
         width: 100%;
@@ -446,17 +446,24 @@
     <div class="ms-header">
         <div class="ms-heading">
             <h1>Manage Students</h1>
-            <p class="muted">Records are read live from Google Sheets.</p>
+            <p class="muted">{{ $school->name }} · Student records are stored in the database.</p>
         </div>
 
         <div class="ms-head-actions">
             <a class="ms-btn ms-btn-ghost"
-               href="{{ route('admin.classes.index') }}">
+               href="{{ route('admin.classes.index', $school) }}">
                 Classes &amp; Sections
             </a>
 
+            <a class="ms-btn ms-btn-ghost"
+               href="{{ route('admin.schools.show', $school) }}">
+                Dashboard
+            </a>
+
             <a class="ms-btn ms-btn-primary"
-               href="{{ route('admission.select') }}">
+               href="{{ route('admission.create', ['token' => $school->admission_token]) }}"
+               target="_blank"
+               rel="noopener">
                 + New Admission
             </a>
         </div>
@@ -470,7 +477,7 @@
 
     <div class="ms-filter-panel">
         <form method="GET"
-              action="{{ route('admin.students.index') }}"
+              action="{{ route('admin.students.index', $school) }}"
               class="ms-filter-bar">
 
             <div class="ms-filter-field">
@@ -484,13 +491,31 @@
             </div>
 
             <div class="ms-filter-field">
-                <label for="class">Class</label>
-                <select id="class" name="class">
+                <label for="class_id">Class</label>
+                <select id="class_id" name="class_id">
                     <option value="all">All classes</option>
-                    @foreach ($classes as $slug => $name)
-                        <option value="{{ $slug }}" @selected($classFilter === $slug)>
-                            {{ $name }}
+                    @foreach ($classes as $class)
+                        <option value="{{ $class->id }}" @selected($classFilter === $class->id)>
+                            {{ $class->name }}
                         </option>
+                    @endforeach
+                </select>
+            </div>
+
+            <div class="ms-filter-field">
+                <label for="section_id">Section</label>
+                <select id="section_id" name="section_id">
+                    <option value="all">All sections</option>
+                    @foreach ($classes as $class)
+                        @foreach ($class->sections as $section)
+                            <option
+                                value="{{ $section->id }}"
+                                data-class="{{ $class->id }}"
+                                @selected($sectionFilter === $section->id)
+                            >
+                                {{ $class->name }} - {{ $section->name }}
+                            </option>
+                        @endforeach
                     @endforeach
                 </select>
             </div>
@@ -513,7 +538,7 @@
                 </button>
 
                 <a class="ms-btn ms-btn-ghost"
-                   href="{{ route('admin.students.index') }}">
+                   href="{{ route('admin.students.index', $school) }}">
                     Reset
                 </a>
             </div>
@@ -526,7 +551,7 @@
             <p class="muted">There are no student records matching your current filters.</p>
             <p class="muted">
                 Adjust the filters, or
-                <a href="{{ route('admission.select') }}">add a new admission</a>.
+                <a href="{{ route('admission.create', ['token' => $school->admission_token]) }}" target="_blank" rel="noopener">add a new admission</a>.
             </p>
         </div>
     @endif
@@ -557,72 +582,69 @@
                         @foreach ($students as $student)
                             <tr>
                                 <td data-label="Admission No">
-                                    {{ $student['admission_number'] ?: '—' }}
+                                    {{ $student->admission_number ?: '—' }}
                                 </td>
 
                                 <td data-label="Student Name">
-                                    {{ trim(($student['first_name'] ?? '').' '.($student['last_name'] ?? '')) ?: '—' }}
+                                    {{ $student->fullName() ?: '—' }}
                                 </td>
 
                                 <td data-label="Gender">
-                                    {{ $student['gender'] ?: '—' }}
+                                    {{ $student->gender ?: '—' }}
                                 </td>
 
                                 <td data-label="Date of Birth">
-                                    {{ $student['date_of_birth'] ?: '—' }}
+                                    {{ $student->date_of_birth ?: '—' }}
                                 </td>
 
                                 <td data-label="Mobile">
-                                    {{ $student['mobile'] ?: '—' }}
+                                    {{ $student->mobile ?: '—' }}
                                 </td>
 
                                 <td data-label="Class">
                                     <span class="ms-class-badge">
-                                        {{ $student['_class_name'] ?? '—' }}
+                                        {{ $student->schoolClass?->name ?? '—' }}
+                                        @if ($student->section)
+                                            · {{ $student->section->name }}
+                                        @endif
                                     </span>
                                 </td>
 
                                 <td data-label="Roll No">
-                                    {{ $student['roll_no'] ?: '—' }}
+                                    {{ $student->roll_no ?: '—' }}
                                 </td>
 
                                 <td data-label="Email">
-                                    {{ $student['email'] ?: '—' }}
+                                    {{ $student->email ?: '—' }}
                                 </td>
 
                                 <td data-label="Actions">
                                     <div class="ms-row-actions">
-                                        @if (! empty($student['record_id']))
-                                            <a
-                                                class="ms-btn ms-btn-small ms-btn-ghost"
-                                                href="{{ route('admin.students.show', ['class' => $student['_class_slug'], 'recordId' => $student['record_id']]) }}">
-                                                View
-                                            </a>
+                                        <a
+                                            class="ms-btn ms-btn-small ms-btn-ghost"
+                                            href="{{ route('admin.students.show', [$school, $student]) }}">
+                                            View
+                                        </a>
 
-                                            <a
-                                                class="ms-btn ms-btn-small ms-btn-ghost"
-                                                href="{{ route('admin.students.edit', ['class' => $student['_class_slug'], 'recordId' => $student['record_id']]) }}">
-                                                Edit
-                                            </a>
+                                        <a
+                                            class="ms-btn ms-btn-small ms-btn-ghost"
+                                            href="{{ route('admin.students.edit', [$school, $student]) }}">
+                                            Edit
+                                        </a>
 
-                                            <form
-                                                method="POST"
-                                                action="{{ route('admin.students.destroy', ['class' => $student['_class_slug'], 'recordId' => $student['record_id']]) }}"
-                                                data-confirm="Delete this student record? This action cannot be undone.">
+                                        <form
+                                            method="POST"
+                                            action="{{ route('admin.students.destroy', [$school, $student]) }}"
+                                            data-confirm="Delete this student record? This action cannot be undone.">
 
-                                                @csrf
-                                                @method('DELETE')
+                                            @csrf
+                                            @method('DELETE')
 
-                                                <button type="submit"
-                                                        class="ms-btn ms-btn-small ms-btn-danger">
-                                                    Delete
-                                                </button>
-                                            </form>
-                                        @else
-                                            <span class="ms-muted ms-small">
-                                                Missing record_id
-                                            </span>
-                                        @endif
+                                            <button type="submit"
+                                                    class="ms-btn ms-btn-small ms-btn-danger">
+                                                Delete
+                                            </button>
+                                        </form>
                                     </div>
                                 </td>
                             </tr>
@@ -643,3 +665,57 @@
     @endif
 </div>
 @endsection
+
+@push('scripts')
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const classSelect = document.getElementById('class_id');
+            const sectionSelect = document.getElementById('section_id');
+
+            if (!classSelect || !sectionSelect) return;
+
+            const sections = Array.from(sectionSelect.options)
+                .filter(function (option) {
+                    return option.value !== 'all';
+                })
+                .map(function (option) {
+                    return {
+                        value: option.value,
+                        text: option.textContent,
+                        classId: option.dataset.class
+                    };
+                });
+
+            function refreshSections() {
+                const classId = classSelect.value;
+                const current = sectionSelect.value;
+
+                sectionSelect.innerHTML = '';
+
+                const placeholder = document.createElement('option');
+                placeholder.value = 'all';
+                placeholder.textContent = 'All sections';
+                sectionSelect.appendChild(placeholder);
+
+                sections.forEach(function (section) {
+                    if (classId !== 'all' && section.classId !== classId) return;
+
+                    const option = document.createElement('option');
+                    option.value = section.value;
+                    option.textContent = section.text;
+                    option.dataset.class = section.classId;
+                    option.selected = section.value === current;
+
+                    sectionSelect.appendChild(option);
+                });
+
+                if (sectionSelect.value !== current) {
+                    sectionSelect.value = 'all';
+                }
+            }
+
+            classSelect.addEventListener('change', refreshSections);
+            refreshSections();
+        });
+    </script>
+@endpush

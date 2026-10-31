@@ -1,28 +1,28 @@
 @extends('layouts.app')
 
-@section('title', 'Upload Logo')
+@section('title', isset($school) ? 'Upload Logo · '.$school->name : 'Upload Logo')
 
 @section('content')
     <div class="card card-narrow">
         <div class="page-head">
-            <h1>School Logo</h1>
-            <p class="muted">
-                Upload a logo to display on the admission form.
-                Accepted formats: PNG, JPG, JPEG and WEBP (maximum 2&nbsp;MB).
-            </p>
+            <div>
+                <h1>{{ isset($school) ? $school->name.' Logo' : 'School Logo' }}</h1>
+                <p class="muted">
+                    Upload a logo to display on the admission form.
+                    Accepted formats: PNG, JPG, JPEG and WEBP (maximum 2&nbsp;MB).
+                </p>
+            </div>
         </div>
 
-        @if ($logoUrl)
-            <div class="form-field">
-                <label>Current logo</label>
-                <img src="{{ $logoUrl }}"
-                     alt="Current school logo"
-                     style="max-width:180px;max-height:120px;">
-            </div>
-        @endif
+        <div class="form-field">
+            <label>Current logo</label>
+            <img src="{{ $logoUrl }}"
+                 alt="{{ isset($school) ? $school->name.' logo' : 'School logo' }}"
+                 style="max-width:180px;max-height:120px;">
+        </div>
 
         <form method="POST"
-              action="{{ route('branding.logo.store') }}"
+              action="{{ isset($school) ? route('admin.logo.store', $school) : route('branding.logo.store') }}"
               enctype="multipart/form-data">
             @csrf
 
@@ -38,6 +38,10 @@
 
             <div class="form-actions">
                 <button type="submit" class="btn btn-primary">Upload Logo</button>
+
+                @isset($school)
+                    <a class="btn btn-ghost" href="{{ route('admin.schools.show', $school) }}">Back to Dashboard</a>
+                @endisset
             </div>
         </form>
     </div>

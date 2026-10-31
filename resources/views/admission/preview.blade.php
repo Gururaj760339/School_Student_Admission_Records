@@ -1,6 +1,6 @@
 @extends('layouts.app')
 
-@section('title', 'Preview Admission · '.$className)
+@section('title', 'Preview Admission · '.$school->name)
 
 @section('content')
 <style>
@@ -426,8 +426,11 @@
             <div>
                 <h1>Review &amp; Confirm</h1>
                 <p class="ap-subtitle">
-                    Class:
-                    <strong class="ap-class-name">{{ $className }}</strong>
+                    {{ $school->name }}
+                    <span aria-hidden="true">·</span>
+                    <strong class="ap-class-name">
+                        {{ $className ?? 'No class selected' }}@if ($sectionName) · {{ $sectionName }}@endif
+                    </strong>
                 </p>
             </div>
         </div>
@@ -480,7 +483,7 @@
                 <p>
                     Nothing has been saved yet. Please verify all the details below.
                     Click <strong>Confirm &amp; Submit</strong> when everything is correct
-                    to write the record to Google Sheets.
+                    to save the record to the school database.
                 </p>
             </div>
 
@@ -490,6 +493,16 @@
             </div>
 
             <dl class="detail-grid ap-detail-grid">
+                <div class="detail-item ap-detail-item">
+                    <dt>Class</dt>
+                    <dd>{{ $className ?? '—' }}</dd>
+                </div>
+
+                <div class="detail-item ap-detail-item">
+                    <dt>Section</dt>
+                    <dd>{{ $sectionName ?? '—' }}</dd>
+                </div>
+
                 @foreach ($fields as $name => $field)
                     <div class="detail-item ap-detail-item">
                         <dt>{{ $field['label'] ?? $name }}</dt>
@@ -523,7 +536,7 @@
                 <div class="ap-action-buttons">
 
                     <form method="GET"
-                          action="{{ route('admission.edit', ['class' => $classSlug]) }}"
+                          action="{{ route('admission.edit', ['token' => $school->admission_token]) }}"
                           class="inline">
 
                         <button type="submit" class="ap-btn ap-btn-secondary">
@@ -539,7 +552,7 @@
                     </form>
 
                     <form method="POST"
-                          action="{{ route('admission.submit', ['class' => $classSlug]) }}"
+                          action="{{ route('admission.submit', ['token' => $school->admission_token]) }}"
                           class="inline"
                           data-single-submit>
 
