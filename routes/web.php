@@ -147,6 +147,9 @@ Route::middleware('auth')
         Route::get('/schools/{school}/students', [StudentController::class, 'index'])
             ->name('students.index');
 
+        Route::get('/schools/{school}/students/export', [StudentController::class, 'export'])
+            ->name('students.export');
+
         Route::get('/schools/{school}/students/{student}', [StudentController::class, 'show'])
             ->name('students.show');
 

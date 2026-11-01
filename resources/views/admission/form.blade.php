@@ -444,12 +444,12 @@
             </p>
         </div>
 
-        @auth
+        {{-- @auth
             <a href="{{ route('admin.schools.show', $school) }}"
                class="af-btn af-btn-secondary">
                 &larr; Dashboard
             </a>
-        @endauth
+        @endauth --}}
     </section>
 
     {{-- Admission form --}}
@@ -784,6 +784,37 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     classSelect.addEventListener('change', refreshSections);
+});
+</script>
+
+{{-- Open native date picker for Date of Birth and Admission Date only. --}}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const dateFields = [
+        'admission_date',
+        'date_of_birth',
+        'dob'
+    ];
+
+    dateFields.forEach(function (fieldName) {
+        const dateInput = document.querySelector(
+            '.admission-form-page .af-fields input[name="' + fieldName + '"]'
+        );
+
+        if (!dateInput) {
+            return;
+        }
+
+        dateInput.addEventListener('click', function () {
+            if (typeof this.showPicker === 'function') {
+                try {
+                    this.showPicker();
+                } catch (error) {
+                    // Use the browser's default date picker behavior.
+                }
+            }
+        });
+    });
 });
 </script>
 @endsection

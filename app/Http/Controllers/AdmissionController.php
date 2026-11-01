@@ -156,12 +156,16 @@ class AdmissionController extends Controller
         $request->session()->forget("admission.pending.$previewToken");
         $request->session()->forget("admission.pending.school.{$school->id}");
 
-        return view('admission.success', [
-            'school' => $school,
-            'className' => $class?->name,
-            'sectionName' => $section?->name,
-            'record' => $data + ['record_id' => $student->id],
-        ]);
+
+        $school = $this->school($token);
+
+        $record = $this->blankRecord();
+
+        if ($pending = $this->pendingForSchool($school)) {
+            $record = array_merge($record, $pending['data']);
+        }
+
+        return view('admission.form', $this->formData($school, $record));
     }
 
     private function school(string $token): School

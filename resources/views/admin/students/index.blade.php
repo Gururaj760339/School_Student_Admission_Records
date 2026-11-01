@@ -451,6 +451,11 @@
 
         <div class="ms-head-actions">
             <a class="ms-btn ms-btn-ghost"
+               href="{{ route('admin.students.export', $school) }}">
+                Export Excel
+            </a>
+
+            <a class="ms-btn ms-btn-ghost"
                href="{{ route('admin.classes.index', $school) }}">
                 Classes &amp; Sections
             </a>
