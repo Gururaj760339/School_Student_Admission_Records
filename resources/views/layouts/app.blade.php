@@ -400,12 +400,12 @@
                 @auth
                     <a href="{{ route('admin.schools.index') }}">School Management</a>
 
-                    @isset($school)
+                    {{-- @isset($school)
                         <a href="{{ route('admission.create', ['token' => $school->admission_token]) }}">New Admission</a>
                         <a href="{{ route('admin.students.index', $school) }}">Manage Students</a>
                         <a href="{{ route('admin.classes.index', $school) }}">Classes &amp; Sections</a>
                         <a href="{{ route('admin.logo.edit', $school) }}">Upload Logo</a>
-                    @endisset
+                    @endisset --}}
 
                     <form method="POST" action="{{ route('logout') }}" class="inline">
                         @csrf
