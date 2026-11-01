@@ -1,4 +1,3 @@
-
 @extends('layouts.app')
 
 @section('title', 'Manage Classes & Sections')
@@ -152,30 +151,13 @@
         position: relative;
     }
 
-    .classes-page .cs-input-icon {
-        position: absolute;
-        top: 50%;
-        left: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transform: translateY(-50%);
-        color: #9ca3af;
-        pointer-events: none;
-    }
-
-    .classes-page .cs-input-icon svg {
-        width: 19px;
-        height: 19px;
-    }
-
     .classes-page .cs-input {
         display: block;
         width: 100%;
         min-width: 0;
         height: 48px;
         margin: 0;
-        padding: 0 14px 0 43px;
+        padding: 0 14px;
         border: 1px solid #d1d5db;
         border-radius: 10px;
         outline: none;
@@ -767,16 +749,6 @@
                         </label>
 
                         <div class="cs-input-wrap">
-                            <span class="cs-input-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" fill="none"
-                                     stroke="currentColor" stroke-width="1.8"
-                                     stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-                                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/>
-                                    <path d="M8 7h8M8 11h6"/>
-                                </svg>
-                            </span>
-
                             <input
                                 type="text"
                                 class="cs-input"
@@ -802,17 +774,6 @@
                         </label>
 
                         <div class="cs-input-wrap">
-                            <span class="cs-input-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" fill="none"
-                                     stroke="currentColor" stroke-width="1.8"
-                                     stroke-linecap="round" stroke-linejoin="round">
-                                    <rect x="3" y="3" width="7" height="7" rx="1.5"/>
-                                    <rect x="14" y="3" width="7" height="7" rx="1.5"/>
-                                    <rect x="3" y="14" width="7" height="7" rx="1.5"/>
-                                    <rect x="14" y="14" width="7" height="7" rx="1.5"/>
-                                </svg>
-                            </span>
-
                             <input
                                 type="text"
                                 class="cs-input"
